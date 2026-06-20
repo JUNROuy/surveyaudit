@@ -1,0 +1,38 @@
+Package: surveyaudit
+Type: Package
+Title: Flow Mapping and Measurement Bias Detection in Survey Data
+Version: 0.1.0
+Authors@R: c(
+    person("Juan", "Meyer", email = "jmeyer271@gmail.com",
+           role = c("cre", "aut", "cph"))
+  )
+Description: Provides tools to audit raw survey data by reconstructing the
+    response sequence from a user-defined variable order. Enables visualization
+    of population flows, detection of logical and statistical anomalies (outliers),
+    and identification of measurement bias before any inference stage.
+    Implements the Hidiroglou-Berthelot method and skewness-adjusted boxplots
+    for outlier detection in official statistics contexts.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 7.3.2
+Depends:
+    R (>= 4.0.0)
+Imports:
+    ggplot2,
+    ggraph,
+    igraph,
+    univOutl,
+    skimr,
+    dplyr,
+    tidyr,
+    rlang
+Suggests:
+    testthat (>= 3.0.0),
+    knitr,
+    rmarkdown,
+    pkgdown
+VignetteBuilder: knitr
+Config/testthat/edition: 3
+URL: https://github.com/jmeyer271/surveyaudit
+BugReports: https://github.com/jmeyer271/surveyaudit/issues
