@@ -1,35 +1,36 @@
-#' surveyaudit: Flow Mapping and Measurement Bias Detection in Survey Data
+#' surveyaudit: Mapeo de flujos y detección de sesgo de medición en encuestas
 #'
-#' Provides tools to audit raw survey data by reconstructing the response
-#' sequence from a user-defined variable order. Enables visualization of
-#' population flows, detection of logical and statistical anomalies (outliers),
-#' and identification of measurement bias before any inference stage.
+#' Provee herramientas para auditar datos crudos de encuestas reconstruyendo
+#' la secuencia de contestación a partir del orden de variables definido por el
+#' usuario. Permite visualizar flujos poblacionales, detectar anomalías lógicas
+#' y estadísticas, e identificar sesgo de medición antes de cualquier etapa de
+#' inferencia.
 #'
-#' ## Main functions
+#' ## Funciones principales
 #'
-#' | Function | Purpose |
+#' | Función | Propósito |
 #' |---|---|
-#' | [flow_audit()] | Reconstruct response flow and detect parteaguas variables |
-#' | [detect_hb()] | Hidiroglou-Berthelot outlier detection (panel data) |
-#' | [detect_sabp()] | Skewness-adjusted boxplot outlier detection |
-#' | [outlier_summary()] | Tidy summary of outliers across multiple variables |
-#' | [plot_flow_tree()] | Hierarchical tree diagram of response sequence |
-#' | [plot_flow_sankey()] | Sankey diagram with chromatic alert mapping |
+#' | [flow_audit()] | Reconstruir el flujo y detectar la variable parteaguas |
+#' | [detect_hb()] | Detección de outliers Hidiroglou-Berthelot (datos de panel) |
+#' | [detect_sabp()] | Detección de outliers con boxplot ajustado por asimetría |
+#' | [outlier_summary()] | Resumen tidy de outliers para múltiples variables |
+#' | [plot_flow_tree()] | Diagrama de árbol jerárquico de la secuencia de respuesta |
+#' | [plot_flow_sankey()] | Diagrama de Sankey con mapeo cromático de alertas |
 #'
-#' ## Typical workflow
+#' ## Flujo de trabajo típico
 #'
 #' ```r
-#' # 1. Define variable order from questionnaire
+#' # 1. Definir el orden de variables del cuestionario
 #' vars <- c("edad", "nivel_educativo", "anios_univ", "salario")
 #'
-#' # 2. Audit the response flow
+#' # 2. Auditar el flujo de respuesta
 #' audit <- flow_audit(encuesta, vars)
 #' print(audit)
 #'
-#' # 3. Detect outliers
+#' # 3. Detectar outliers
 #' outlier_summary(encuesta, c("salario", "anios_univ"), method = "sabp")
 #'
-#' # 4. Visualize
+#' # 4. Visualizar
 #' plot_flow_sankey(audit)
 #' plot_flow_tree(audit)
 #' ```

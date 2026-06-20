@@ -1,17 +1,18 @@
-#' Plot hierarchical response-flow tree
+#' Diagrama de árbol jerárquico del flujo de respuesta
 #'
-#' Renders a directed tree diagram of the survey response sequence produced
-#' by \code{\link{flow_audit}}. Node size is proportional to the real n;
-#' node and edge color encode quality alerts.
+#' Genera un árbol dirigido de la secuencia de contestación producida por
+#' \code{\link{flow_audit}}. El tamaño de cada nodo es proporcional al n real;
+#' el color de nodos y aristas codifica el nivel de alerta de calidad.
 #'
-#' @param audit A \code{flow_audit} data.frame from \code{\link{flow_audit}}.
-#' @param title Character. Plot title. Defaults to "Survey Response Flow Tree".
-#' @param node_scale Numeric vector of length 2. Min/max node radius range.
-#'   Default \code{c(4, 18)}.
-#' @param label_size Numeric. Font size for variable labels. Default 3.2.
-#' @param show_pct Logical. Show % entry on edges. Default TRUE.
+#' @param audit Un data.frame de clase \code{flow_audit} producido por
+#'   \code{\link{flow_audit}}.
+#' @param title Cadena de texto. Título del gráfico.
+#' @param node_scale Vector numérico de largo 2. Rango mínimo/máximo del radio
+#'   de los nodos. Por defecto \code{c(4, 18)}.
+#' @param label_size Numérico. Tamaño de fuente de las etiquetas. Por defecto 3.2.
+#' @param show_pct Lógico. Mostrar % de entrada en las aristas. Por defecto TRUE.
 #'
-#' @return A \code{ggplot} object (invisible). Print it or save with
+#' @return Un objeto \code{ggplot} (invisible). Imprimirlo o guardarlo con
 #'   \code{ggplot2::ggsave()}.
 #'
 #' @examples
@@ -27,29 +28,28 @@
 #'
 #' @export
 plot_flow_tree <- function(audit,
-                           title      = "Survey Response Flow Tree",
+                           title      = "Árbol de Secuencia de Contestación",
                            node_scale = c(4, 18),
                            label_size = 3.2,
                            show_pct   = TRUE) {
-  if (!inherits(audit, "data.frame") || !all(c("variable","parteaguas","n_real","alerta") %in% names(audit)))
-    stop("`audit` must be the output of flow_audit().")
+  if (!inherits(audit, "data.frame") ||
+      !all(c("variable","parteaguas","n_real","alerta") %in% names(audit)))
+    stop("`audit` debe ser la salida de flow_audit().")
 
   .check_pkg("igraph")
   .check_pkg("ggraph")
   .check_pkg("ggplot2")
   .check_pkg("dplyr")
 
-  # Build edge list: parent -> child
   edges <- data.frame(
-    from       = audit$parteaguas,
-    to         = audit$variable,
-    pct        = audit$pct_entrada,
-    alerta     = audit$alerta,
+    from   = audit$parteaguas,
+    to     = audit$variable,
+    pct    = audit$pct_entrada,
+    alerta = audit$alerta,
     stringsAsFactors = FALSE
   )
   edges <- edges[edges$from != edges$to, ]
 
-  # Add root node for "(Inicio)"
   all_nodes <- unique(c("(Inicio)", audit$variable))
   nodes <- data.frame(
     name   = all_nodes,
@@ -60,17 +60,12 @@ plot_flow_tree <- function(audit,
     stringsAsFactors = FALSE
   )
 
-  g      <- igraph::graph_from_data_frame(edges, directed = TRUE, vertices = nodes)
-  colors <- .alert_color(igraph::V(g)$alerta)
+  g <- igraph::graph_from_data_frame(edges, directed = TRUE, vertices = nodes)
 
   p <- ggraph::ggraph(g, layout = "tree") +
     ggraph::geom_edge_diagonal(
-      ggplot2::aes(
-        color = alerta,
-        width = after_stat(index) * 0.6 + 0.2
-      ),
-      alpha = 0.65,
-      show.legend = FALSE
+      ggplot2::aes(color = alerta, width = after_stat(index) * 0.6 + 0.2),
+      alpha = 0.65, show.legend = FALSE
     ) +
     ggraph::scale_edge_color_manual(
       values = c(
@@ -81,16 +76,12 @@ plot_flow_tree <- function(audit,
       )
     ) +
     ggraph::geom_node_point(
-      ggplot2::aes(size = n_real, color = alerta),
-      alpha = 0.92
+      ggplot2::aes(size = n_real, color = alerta), alpha = 0.92
     ) +
     ggraph::geom_node_text(
       ggplot2::aes(label = paste0(name, "\nn=", n_real)),
-      size      = label_size,
-      repel     = TRUE,
-      color     = .PALETTE$texto,
-      fontface  = "bold",
-      point.padding = ggplot2::unit(0.25, "lines")
+      size = label_size, repel = TRUE, color = .PALETTE$texto,
+      fontface = "bold", point.padding = ggplot2::unit(0.25, "lines")
     ) +
     ggplot2::scale_color_manual(
       name   = "Alerta de calidad",
@@ -101,14 +92,11 @@ plot_flow_tree <- function(audit,
         "Sin datos"           = .PALETTE$sin_dato
       )
     ) +
-    ggplot2::scale_size_continuous(
-      range  = node_scale,
-      guide  = "none"
-    ) +
+    ggplot2::scale_size_continuous(range = node_scale, guide = "none") +
     ggplot2::labs(
       title    = title,
-      subtitle = "Node size ∝ respondents reaching that variable",
-      caption  = "Colors: blue = OK • orange = mild loss • red = high non-response"
+      subtitle = "Tamaño del nodo proporcional al n de encuestados que llegaron a esa variable",
+      caption  = "Colores: azul = OK  •  naranja = pérdida leve  •  rojo = alta no-respuesta"
     ) +
     .theme_audit() +
     ggplot2::theme(legend.position = "bottom")
@@ -119,5 +107,5 @@ plot_flow_tree <- function(audit,
 #' @keywords internal
 .check_pkg <- function(pkg) {
   if (!requireNamespace(pkg, quietly = TRUE))
-    stop("Package '", pkg, "' is required. Install it with: install.packages('", pkg, "')")
+    stop("El paquete '", pkg, "' es necesario. Instalarlo con: install.packages('", pkg, "')")
 }
