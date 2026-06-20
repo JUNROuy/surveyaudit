@@ -104,8 +104,3 @@ plot_flow_tree <- function(audit,
   invisible(p)
 }
 
-#' @keywords internal
-.check_pkg <- function(pkg) {
-  if (!requireNamespace(pkg, quietly = TRUE))
-    stop("El paquete '", pkg, "' es necesario. Instalarlo con: install.packages('", pkg, "')")
-}

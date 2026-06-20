@@ -1,4 +1,10 @@
-# Shared palette and theme for all surveyaudit visualizations
+# Shared palette, theme and utilities for all surveyaudit visualizations
+
+#' @keywords internal
+.check_pkg <- function(pkg) {
+  if (!requireNamespace(pkg, quietly = TRUE))
+    stop("El paquete '", pkg, "' es necesario. Instalarlo con: install.packages('", pkg, "')")
+}
 
 #' @keywords internal
 .PALETTE <- list(
