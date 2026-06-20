@@ -22,6 +22,7 @@ Imports:
     ggplot2,
     ggraph,
     igraph,
+    ggrepel,
     univOutl,
     skimr,
     dplyr,
