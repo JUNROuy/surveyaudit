@@ -1,0 +1,279 @@
+---
+title: "Auditoría de Flujo de Encuesta con surveyaudit"
+subtitle: "Detección de sesgo de medición antes de la inferencia estadística"
+author: "Juan Meyer"
+date: "`r Sys.Date()`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 3
+    fig_width: 8
+    fig_height: 5
+vignette: >
+  %\VignetteIndexEntry{Auditoría de Flujo de Encuesta con surveyaudit}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse  = TRUE,
+  comment   = "#>",
+  fig.align = "center",
+  warning   = FALSE,
+  message   = FALSE
+)
+```
+
+## 1. Marco conceptual: Error Total de la Encuesta
+
+Antes de cualquier modelo estadístico, el dato crudo de una encuesta contiene
+errores que el análisis clásico raramente detecta: **saltos de pregunta mal
+aplicados**, **outliers de registro** y **fatiga del encuestado** que produce
+goteo silencioso de respuestas.
+
+El marco de **Error Total de la Encuesta** (*Total Survey Error*, Groves &
+Lyberg 2010) distingue entre:
+
+- **Error de muestreo**: quién fue seleccionado.
+- **Error de medición**: qué registró el encuestador o dispositivo.
+- **Error de procesamiento**: qué ocurrió al digitalizar o codificar.
+
+`surveyaudit` se enfoca en los dos últimos, auditando el **flujo** de
+respuestas antes de producir cualquier estimación.
+
+---
+
+## 2. El dataset de ejemplo
+
+Simulamos una encuesta de **Trayectoria Educativa y Salarial** con 1 000 casos.
+El cuestionario tiene la siguiente lógica de salto:
+
+```
+edad → nivel_educativo → [si Universitario] → anios_univ → salario_actual
+```
+
+Introducimos **tres tipos de error** deliberados para que el paquete los detecte:
+
+1. **Error de salto**: 30 casos con `nivel_educativo = "Secundaria"` tienen
+   `anios_univ` completado (transición imposible).
+2. **Outlier de registro**: un caso de 19 años con salario de alto ejecutivo
+   (error de digitación).
+3. **Fatiga**: caída constante de n desde la mitad del cuestionario.
+
+```{r datos}
+library(surveyaudit)
+set.seed(2026)
+
+n_total <- 1000
+
+# Edad: 18-65
+edad <- sample(18:65, n_total, replace = TRUE)
+
+# Nivel educativo
+nivel_educativo <- sample(
+  c("Primaria", "Secundaria", "Universitario"),
+  n_total, replace = TRUE, prob = c(0.20, 0.45, 0.35)
+)
+
+# Años en universidad: solo para universitarios
+anios_univ <- ifelse(
+  nivel_educativo == "Universitario",
+  sample(3:7, n_total, replace = TRUE),
+  NA_real_
+)
+
+# Error de salto: 30 casos de Secundaria con anios_univ completado
+idx_error_salto <- which(nivel_educativo == "Secundaria")[1:30]
+anios_univ[idx_error_salto] <- sample(3:5, 30, replace = TRUE)
+
+# Salario: solo para universitarios (simula alta no-respuesta adicional)
+universitarios   <- which(nivel_educativo == "Universitario")
+n_univ           <- length(universitarios)
+responden_sal    <- sample(universitarios, floor(n_univ * 0.78))  # 22% no responde
+salario_actual   <- rep(NA_real_, n_total)
+salario_actual[responden_sal] <- round(
+  rlnorm(length(responden_sal), meanlog = 10.5, sdlog = 0.6)
+)
+
+# Error de registro: un joven de 19 años con salario de alto ejecutivo
+idx_outlier                <- which(edad == 19)[1]
+salario_actual[idx_outlier] <- 4500000
+
+encuesta <- data.frame(
+  edad, nivel_educativo, anios_univ, salario_actual,
+  stringsAsFactors = FALSE
+)
+
+cat("Dimensiones:", nrow(encuesta), "x", ncol(encuesta), "\n")
+cat("NAs por variable:\n")
+print(colSums(is.na(encuesta)))
+```
+
+---
+
+## 3. Diagnóstico de flujo: la variable parteaguas
+
+El corazón del paquete es `flow_audit()`. Recibe el dataframe y el orden lógico
+de las variables tal como aparecen en el cuestionario.
+
+```{r flow-audit}
+vars_orden <- c("edad", "nivel_educativo", "anios_univ", "salario_actual")
+
+audit <- flow_audit(encuesta, vars_orden)
+print(audit)
+```
+
+### Interpretación de columnas
+
+| Columna | Qué indica |
+|---|---|
+| `parteaguas` | Variable que causó la última caída de n |
+| `n_esperado` | Cuántos deberían haber llegado según el filtro anterior |
+| `n_real` | Cuántos efectivamente respondieron |
+| `pct_entrada` | Retención respecto al esperado |
+| `alerta` | OK / Baja (Perdida leve) / Alta (No respuesta) |
+
+> **Nota:** `anios_univ` tiene un `n_real` mayor al esperado si hay casos de
+> Secundaria que la completaron (error de salto). Esto se detecta como
+> inconsistencia cuando el n supera al de su parteaguas lógico.
+
+---
+
+## 4. Detección de outliers
+
+### 4.1 Skewness-Adjusted Boxplot (SABP)
+
+Ideal para variables con distribución asimétrica como el salario. Usa el
+**medcouple** para ajustar los bigotes y evitar falsos positivos.
+
+```{r sabp}
+res_sabp <- detect_sabp(encuesta$salario_actual)
+
+cat("Outliers detectados:", sum(res_sabp$outlier, na.rm = TRUE), "\n")
+cat("Medcouple (M):", round(res_sabp$medcouple, 3), "\n")
+cat("Límite superior:", format(res_sabp$limits["upper"], big.mark = ","), "\n")
+
+# Ver los casos marcados
+outliers_sal <- which(res_sabp$outlier)
+encuesta[outliers_sal, c("edad", "nivel_educativo", "salario_actual")]
+```
+
+El caso de 19 años con salario de ~4.5 millones queda inmediatamente expuesto.
+
+### 4.2 Hidiroglou-Berthelot (HB)
+
+Para variables medidas en dos momentos o con una referencia esperada. Aquí lo
+aplicamos comparando `anios_univ` con una estimación de años esperados según
+el salario (relación esperada entre ambas variables continuas).
+
+```{r hb}
+# Subconjunto con ambas variables completas
+mask <- !is.na(encuesta$anios_univ) & !is.na(encuesta$salario_actual)
+yt1  <- encuesta$anios_univ[mask]
+yt2  <- log(encuesta$salario_actual[mask])  # escala comparable
+
+res_hb <- detect_hb(yt1, yt2, U = 0.5, C = 7)
+
+cat("Outliers HB detectados:", sum(res_hb$outlier, na.rm = TRUE), "\n")
+cat("Score máximo (|E_i|):", round(max(abs(res_hb$score), na.rm = TRUE), 2), "\n")
+```
+
+### 4.3 Resumen multi-variable
+
+```{r summary}
+outlier_summary(encuesta, c("anios_univ", "salario_actual"), method = "sabp")
+```
+
+---
+
+## 5. Visualización: Sankey de flujo
+
+El **diagrama de Sankey** muestra el flujo poblacional completo. El ancho de
+las cintas representa el n que transita entre variables; los colores revelan
+la calidad del tránsito.
+
+```{r sankey, fig.height=5.5}
+p_sankey <- plot_flow_sankey(
+  audit,
+  title = "Encuesta Trayectoria Educativa y Salarial — Flujo de Respuestas"
+)
+print(p_sankey)
+```
+
+**Cómo leer el gráfico:**
+
+- **Cintas azules**: el flujo llega sin pérdidas significativas.
+- **Cintas naranjas**: pérdida moderada (salto lógico o fatiga leve).
+- **Cintas rojas**: alta no-respuesta — zona de posible sesgo de medición.
+
+---
+
+## 6. Visualización: Árbol jerárquico
+
+El **diagrama de árbol** muestra la misma información en formato jerárquico.
+El tamaño de cada nodo es proporcional al n real que llegó a esa variable.
+
+```{r tree, fig.height=5.5}
+p_tree <- plot_flow_tree(
+  audit,
+  title = "Árbol de Secuencia de Contestación"
+)
+print(p_tree)
+```
+
+---
+
+## 7. Interpretación de alertas de campo
+
+### Fatiga del encuestado
+
+Si el n cae progresivamente variable tras variable (≈ 1-3% por pregunta) sin
+saltos lógicos que lo justifiquen, se trata de **fatiga**. Señales:
+
+- `pct_entrada` decrece monotónicamente a lo largo de la secuencia.
+- La caída comienza en la mitad del cuestionario.
+
+**Acción recomendada**: revisar el diseño del cuestionario (longitud, orden,
+respuestas intermedias) o el protocolo del encuestador.
+
+### Alta no-respuesta de ítem
+
+Una caída abrupta (> 15%) en una sola variable sin salto lógico indica
+**rechazo de pregunta** (*item non-response*). Típicamente ocurre en preguntas
+de ingresos, datos personales o temas sensibles.
+
+**Acción recomendada**: imputación o análisis de sesgo de no-respuesta antes
+de inferir.
+
+### Transiciones imposibles (skip pattern errors)
+
+Cuando el n_real de una variable supera al n de su parteaguas lógico, hay
+registros que no deberían estar ahí. Ejemplo: `anios_univ` completado por
+personas con `nivel_educativo = "Secundaria"`.
+
+**Acción recomendada**: depuración forzada de los casos inconsistentes antes
+del análisis.
+
+---
+
+## 8. Exportar resultados
+
+```{r export, eval=FALSE}
+# Guardar tabla de auditoría
+write.csv(audit, "auditoria_flujo.csv", row.names = FALSE)
+
+# Guardar gráficos en vectorial (máxima calidad para publicación)
+ggplot2::ggsave("sankey_flujo.svg",  p_sankey, width = 10, height = 6)
+ggplot2::ggsave("arbol_flujo.svg",   p_tree,   width = 10, height = 7)
+ggplot2::ggsave("sankey_flujo.pdf",  p_sankey, width = 10, height = 6)
+```
+
+---
+
+## Referencias
+
+- Groves, R.M. & Lyberg, L. (2010). *Total Survey Error: Past, Present, and Future.* Public Opinion Quarterly, 74(5), 849–879.
+- Hidiroglou, M.A. & Berthelot, J.M. (1986). *Statistical editing and imputation for periodic business surveys.* Survey Methodology, 12(1), 73–83.
+- Hidiroglou, M.A. & Emond, N. (2018). *Outlier detection methods for business surveys.* Statistics Canada.
+- Hubert, M. & Vandervieren, E. (2008). *An adjusted boxplot for skewed distributions.* Computational Statistics & Data Analysis, 52(12), 5186–5201.
